@@ -1,20 +1,18 @@
 const asyncHandler = (requestHandler) => {
-  return (req, res, next) => {
-    Promise.resolve(requestHandler(req, res, next))
-    .catch ((err) => next(err))
-  }
-}
+    return (req, res, next) => {
+        Promise.resolve(requestHandler(req, res, next)).catch((err) =>
+            next(err)
+        );
+    };
+};
 
-export {asyncHandler}
-
-
-
+export { asyncHandler };
 
 //another method
 
 // const asyncHandler = () => {}
 // function passed inside a function
-// const asyncHandler = (func) => {() => {}} 
+// const asyncHandler = (func) => {() => {}}
 // const asyncHandler = (func) => () => {}
 
 // const asyncHandler = (fn) => async (req, res, next) => {
@@ -24,7 +22,7 @@ export {asyncHandler}
 //     res.status(error.code || 500).json({
 //       success: false,
 //       message: error.message
-//     })  
+//     })
 //   }
 // }
 
