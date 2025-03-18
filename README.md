@@ -66,7 +66,7 @@ It also integrates **bcrypt** for secure password management, **Cloudinary & Mul
 
 ## Database Design
 
-![Database Schema](database-design.png)
+![Database Schema](database%20design.png)
 
 ## Project Structure
 
