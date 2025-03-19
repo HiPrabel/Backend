@@ -8,6 +8,12 @@ The backend is built using **Node.js, Express.js, and MongoDB** with authenticat
 
 It also integrates **bcrypt** for secure password management, **Cloudinary & Multer** for scalable storage, and **Mongoose** for database operations.
 
+## Postman Documentation
+
+#### The complete API documentation for all the endpoints:
+
+### 🔗[Postman API Documentation](https://documenter.getpostman.com/view/32677164/2sAYkEqzWq)
+
 ## Table of Contents
 
 - [Features](#features)
