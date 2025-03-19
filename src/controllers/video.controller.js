@@ -98,8 +98,6 @@ const publishAVideo = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Thumbnail file is required");
     }
 
-    const duration = await getVideoDuration(videoFileLocalPath);
-
     const video = await uploadOnCloudinary(videoLocalPath);
     const thumbnail = await uploadOnCloudinary(thumbnailLocalPath);
 
@@ -112,7 +110,7 @@ const publishAVideo = asyncHandler(async (req, res) => {
         thumbnail: thumbnail.url,
         title,
         description,
-        duration,
+        duration: video.duration,
         owner: req.user._id,
     });
 
@@ -139,14 +137,16 @@ const getVideoById = asyncHandler(async (req, res) => {
 
     const video = await Video.findById(videoId).populate(
         "owner",
-        "name email avatar"
+        "name email avatar username"
     );
 
     if (!video) {
         throw new ApiError(404, "Video not found");
     }
 
-    return res.status(200).json(200, video, "Video fetched successfully");
+    return res
+        .status(200)
+        .json(new ApiResponse(200, video, "Video fetched successfully"));
 });
 
 const updateVideo = asyncHandler(async (req, res) => {

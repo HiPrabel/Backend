@@ -1,5 +1,6 @@
 import mongoose, { isValidObjectId } from "mongoose";
 import { Playlist } from "../models/playlist.model.js";
+import { Video } from "../models/video.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -62,7 +63,13 @@ const getPlaylistById = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Invalid playlist ID");
     }
 
-    const playlist = await Playlist.findById(playlistId).populate("videos");
+    const playlist = await Playlist.findById(playlistId).populate({
+        path: "videos",
+        populate: {
+            path: "owner",
+            select: "_id username email avatar",
+        },
+    });
 
     if (!playlist) {
         throw new ApiError(404, "Playlist not found");
@@ -132,6 +139,24 @@ const removeVideoFromPlaylist = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Invalid playlist or video ID");
     }
 
+    const playlist = await Playlist.findOne({ _id: playlistId });
+
+    if (!playlist) {
+        throw new ApiError(404, "Playlist not found");
+    }
+
+    if (!playlist.videos.includes(videoId)) {
+        return res
+            .status(400)
+            .json(
+                new ApiResponse(
+                    400,
+                    playlist.videos,
+                    "Video not found in the playlist"
+                )
+            );
+    }
+
     const updatedPlaylist = await Playlist.findByIdAndUpdate(
         playlistId,
         {
@@ -191,7 +216,7 @@ const updatePlaylist = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Invalid playlist ID");
     }
 
-    if (!name || !description) {
+    if (!name && !description) {
         throw new ApiError(400, "Name or description cannot be empty");
     }
 
