@@ -70,10 +70,6 @@ It also integrates **bcrypt** for secure password management, **Cloudinary & Mul
 - **Middleware:** Multer (File Uploads), CORS, Cookie-parser
 - **Storage:** Cloudinary & Multer for scalable file storage
 
-## Database Design
-
-![Database Schema](database%20design.png)
-
 ## Project Structure
 
 ```
