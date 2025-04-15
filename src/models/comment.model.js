@@ -15,6 +15,18 @@ const commentSchema = new Schema(
             type: Schema.Types.ObjectId,
             ref: "User",
         },
+        post: {
+            type: Schema.Types.ObjectId,
+            ref: "Post",
+        },
+        parent: {
+            type: Schema.Types.ObjectId,
+            ref: "Comment",
+        },
+        replyingTo: {
+            type: Schema.Types.ObjectId,
+            ref: "Comment",
+        },
     },
     { timestamps: true }
 );
