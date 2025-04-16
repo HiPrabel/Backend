@@ -46,6 +46,92 @@ const getUserPosts = asyncHandler(async (req, res) => {
         .json(new ApiResponse(200, posts, "User posts fetched successfully"));
 });
 
+const getPostById = asyncHandler(async (req, res) => {
+    const { postId } = req.params;
+
+    if (!isValidObjectId(postId)) {
+        throw new ApiError(400, "Invalid post ID");
+    }
+
+    const post = await Post.aggregate([
+        {
+            $match: {
+                _id: new mongoose.Types.ObjectId(postId),
+            },
+        },
+        {
+            $lookup: {
+                from: "users",
+                localField: "owner",
+                foreignField: "_id",
+                as: "owner",
+            },
+        },
+        {
+            // array to object
+            $unwind: "$owner",
+        },
+        {
+            $lookup: {
+                from: "likes",
+                localField: "_id",
+                foreignField: "post",
+                as: "likes",
+            },
+        },
+        {
+            $lookup: {
+                from: "comments",
+                localField: "_id",
+                foreignField: "post",
+                as: "comments",
+            },
+        },
+        {
+            $addFields: {
+                totalLikes: { $size: "$likes" },
+                totalComments: { $size: "$comments" },
+            },
+        },
+        {
+            $addFields: {
+                isLiked: {
+                    $in: [req.user._id, "$likes.user"],
+                },
+                isPostOwner: {
+                    $eq: ["$owner._id", req.user._id],
+                },
+            },
+        },
+        {
+            $project: {
+                _id: 1,
+                content: 1,
+                totalLikes: 1,
+                totalComments: 1,
+                isLiked: 1,
+                isPostOwner: 1,
+                createdAt: 1,
+                owner: {
+                    _id: "$owner._id",
+                    fullName: "$owner.fullName",
+                    username: "$owner.username",
+                    email: "$owner.email",
+                    avatar: "$owner.avatar",
+                },
+            },
+        },
+    ]);
+
+    if (!post || post.length === 0) {
+        throw new ApiError(404, "Post not found");
+    }
+
+    return res
+        .status(200)
+        .json(new ApiResponse(200, post[0], "Post fetched successfully"));
+});
+
 const updatePost = asyncHandler(async (req, res) => {
     const { postId } = req.params;
 
@@ -118,4 +204,4 @@ const deletePost = asyncHandler(async (req, res) => {
     );
 });
 
-export { createPost, getUserPosts, updatePost, deletePost };
+export { createPost, getUserPosts, getPostById, updatePost, deletePost };
