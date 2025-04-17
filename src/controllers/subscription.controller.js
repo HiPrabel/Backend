@@ -53,7 +53,7 @@ const getUserChannelSubscribers = asyncHandler(async (req, res) => {
         channel: channelId,
     }).populate("subscriber", "_id name email");
 
-    if (!subscribersDocs) {
+    if (!subscribersDocs || subscribersDocs.length === 0) {
         throw new ApiError(404, "No subscribers found for this channel");
     }
 
@@ -94,4 +94,33 @@ const getSubscribedChannels = asyncHandler(async (req, res) => {
         );
 });
 
-export { toggleSubscription, getUserChannelSubscribers, getSubscribedChannels };
+const isSubscribed = asyncHandler(async (req, res) => {
+    const { channelId } = req.params;
+    const user = req.user;
+
+    if (!user) {
+        return res
+            .status(200)
+            .json(new ApiResponse(200, false, "Not logged in"));
+    }
+
+    const isSubscriber = await Subscription.findOne({
+        subscriber: user.id,
+        channel: channelId,
+    });
+
+    if (isSubscriber) {
+        return res.status(200).json(new ApiResponse(200, true, "Subscribed"));
+    } else {
+        return res
+            .status(200)
+            .json(new ApiResponse(200, false, "Not Subscribed"));
+    }
+});
+
+export {
+    toggleSubscription,
+    getUserChannelSubscribers,
+    getSubscribedChannels,
+    isSubscribed,
+};
