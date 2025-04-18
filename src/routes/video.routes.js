@@ -3,15 +3,16 @@ import {
     deleteVideo,
     getAllVideos,
     getVideoById,
-    publishAVideo,
+    publishVideo,
     togglePublishStatus,
     updateVideo,
-} from "../controllers/video.controller.js"
-import {verifyJWT} from "../middlewares/auth.middleware.js"
-import {upload} from "../middlewares/multer.middleware.js"
+    getPreviewVideoById,
+} from "../controllers/video.controller.js";
+import { verifyJWT } from "../middlewares/auth.middleware.js";
+import { upload } from "../middlewares/multer.middleware.js";
 
 const router = Router();
-router.use(verifyJWT); 
+router.use(verifyJWT);
 
 router
     .route("/")
@@ -26,9 +27,8 @@ router
                 name: "thumbnail",
                 maxCount: 1,
             },
-            
         ]),
-        publishAVideo
+        publishVideo
     );
 
 router
@@ -38,5 +38,7 @@ router
     .patch(upload.single("thumbnail"), updateVideo);
 
 router.route("/toggle/publish/:videoId").patch(togglePublishStatus);
+
+router.route("/preview/:videoId").get(getPreviewVideoById);
 
 export default router
