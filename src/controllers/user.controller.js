@@ -1,12 +1,14 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
+import { Video } from "../models/video.model.js";
+import { watchHistory } from "../models/watchHistory.model.js";
 import {
     uploadOnCloudinary,
     deleteFromCloudinary,
 } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
-import mongoose from "mongoose";
+import mongoose, { isValidObjectId } from "mongoose";
 import jwt from "jsonwebtoken";
 
 const generateAccessAndRefreshTokens = async (userId) => {
@@ -442,6 +444,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
                 avatar: 1,
                 coverImage: 1,
                 email: 1,
+                createdAt: 1,
             },
         },
     ]);
@@ -457,19 +460,23 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
 });
 
 const getWatchHistory = asyncHandler(async (req, res) => {
-    const user = await User.aggregate([
+    const { page = 1, limit = 10 } = req.query;
+    const userId = req.user._id;
+
+    const history = await watchHistory.aggregate([
         {
             $match: {
-                _id: new mongoose.Types.ObjectId(req.user._id),
+                watchedBy: new mongoose.Types.ObjectId(userId),
             },
         },
         {
             $lookup: {
                 from: "videos",
-                localField: "watchHistory",
+                localField: "videoId",
                 foreignField: "_id",
-                as: "watchHistory",
+                as: "video",
                 pipeline: [
+                    { $match: { isPublished: true } },
                     {
                         $lookup: {
                             from: "users",
@@ -479,9 +486,11 @@ const getWatchHistory = asyncHandler(async (req, res) => {
                             pipeline: [
                                 {
                                     $project: {
+                                        _id: 1,
                                         fullName: 1,
                                         username: 1,
                                         avatar: 1,
+                                        createdAt: 1,
                                     },
                                 },
                             ],
@@ -489,22 +498,142 @@ const getWatchHistory = asyncHandler(async (req, res) => {
                     },
                     {
                         $addFields: {
-                            owner: {
-                                $first: "$owner",
+                            owner: { $first: "$owner" },
+                        },
+                    },
+                    {
+                        $lookup: {
+                            from: "subscriptions",
+                            localField: "owner._id",
+                            foreignField: "channel",
+                            as: "subscribers",
+                        },
+                    },
+                    {
+                        $addFields: {
+                            "owner.subscribers": { $size: "$subscribers" },
+                            "owner.isSubscribed": {
+                                $in: [
+                                    new mongoose.Types.ObjectId(userId),
+                                    "$subscribers.subscriber",
+                                ],
                             },
                         },
                     },
                 ],
             },
         },
+        { $unwind: "$video" },
+        { $sort: { createdAt: -1 } },
+        { $skip: (page - 1) * Math.max(parseInt(limit), 1) },
+        { $limit: Math.max(parseInt(limit), 1) },
+        {
+            $group: {
+                _id: {
+                    year: { $year: "$createdAt" },
+                    month: { $month: "$createdAt" },
+                    day: { $dayOfMonth: "$createdAt" },
+                },
+                createdAt: { $first: "$createdAt" },
+                videos: { $push: "$video" },
+            },
+        },
+        { $sort: { _id: -1 } },
     ]);
+
+    const totalCount = await watchHistory.aggregate([
+        {
+            $match: { watchedBy: new mongoose.Types.ObjectId(userId) },
+        },
+        {
+            $lookup: {
+                from: "videos",
+                localField: "videoId",
+                foreignField: "_id",
+                as: "video",
+                pipeline: [{ $match: { isPublished: true } }],
+            },
+        },
+        { $unwind: "$video" },
+        { $count: "total" },
+    ]);
+
+    const totalPages = Math.ceil((totalCount[0]?.total || 0) / limit);
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            {
+                history,
+                totalPages,
+                currentPage: parseInt(page),
+                totalCount: totalCount[0]?.total || 0,
+            },
+            "Watch history fetched successfully"
+        )
+    );
+});
+
+const pushVideoToWatchHistory = asyncHandler(async (req, res) => {
+    const { videoId, userTimeZoneOffset } = req.body;
+
+    if (!isValidObjectId(videoId)) throw new ApiError(400, "Invalid Video Id");
+
+    if (!userTimeZoneOffset)
+        throw new ApiError(400, "User TimeZone Offset is required");
+
+    const isVideo = await Video.findOne({ _id: videoId, isPublished: true });
+
+    if (!isVideo) throw new ApiError(400, "video not found");
+
+    // Because the mongoDB date is in UTC, we need to convert the user’s local time to UTC.
+    const nowUTC = new Date(); // current time in UTC
+
+    // Because the userTimeZoneOffset is in minutes, we need to convert it to milliseconds
+    // by multiplying by 60000 (60 seconds * 1000 milliseconds).
+
+    const userNow = new Date(nowUTC.getTime() - userTimeZoneOffset * 60000); // current time in user's local time
+
+    const userStartOfDay = new Date(userNow);
+    userStartOfDay.setHours(0, 0, 0, 0); // 00:00:00.000 in user's time
+
+    const userEndOfDay = new Date(userStartOfDay);
+    userEndOfDay.setDate(userEndOfDay.getDate() + 1); // next day 00:00 in user's time
+
+    // converting range of user day back to utc
+    const utcStartOfDay = new Date(
+        userStartOfDay.getTime() + userTimeZoneOffset * 60000
+    );
+    const utcEndOfDay = new Date(
+        userEndOfDay.getTime() + userTimeZoneOffset * 60000
+    );
+
+    // delete the video from watch history if it exists in the same day
+    await watchHistory.deleteMany({
+        videoId,
+        watchedBy: req.user._id,
+        createdAt: { $gte: utcStartOfDay, $lt: utcEndOfDay },
+    });
+
+    // create a new entry in watch history
+    const addedVideo = await watchHistory.create({
+        videoId,
+        watchedBy: req.user._id,
+    });
+
+    if (!addedVideo)
+        throw new ApiError(400, "Can't add Video to watch history");
+
+    // increment the views of the video
+    await Video.findByIdAndUpdate(videoId, { $inc: { views: 1 } });
+
     return res
         .status(200)
         .json(
             new ApiResponse(
                 200,
-                user[0].watchHistory,
-                "Watch history fetched successfully"
+                addedVideo,
+                "Video added to watchHistory successfully"
             )
         );
 });
@@ -521,4 +650,5 @@ export {
     updateUserCoverImage,
     getUserChannelProfile,
     getWatchHistory,
+    pushVideoToWatchHistory,
 };
