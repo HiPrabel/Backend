@@ -73,10 +73,10 @@ const getChannelStats = asyncHandler(async (req, res) => {
         new ApiResponse(
             200,
             {
-                totalVideos,
-                totalSubscribers,
-                totalViews: totalViews[0]?.totalViews || 0,
-                totalVideoLikes,
+                totalVideos: totalVideos[0]?.totalVideos || 0,
+                totalSubscribers: totalSubscribers[0]?.totalSubscribers || 0,
+                totalVideoViews: totalViews[0]?.totalViews || 0,
+                totalVideoLikes: totalVideoLikes[0]?.totalVideoLikes || 0,
             },
             "Channel stats fetched successfully"
         )
@@ -86,18 +86,82 @@ const getChannelStats = asyncHandler(async (req, res) => {
 const getChannelVideos = asyncHandler(async (req, res) => {
     const userId = req.user._id;
 
-    const videos = await Video.find({
-        owner: userId,
-    }).sort({
-        createdAt: -1,
-    });
+    const { page = 1, limit = 10 } = req.query;
+
+    if (!mongoose.isValidObjectId(userId)) {
+        throw new ApiError(400, "Invalid user ID");
+    }
+
+    const totalVideos = await Video.countDocuments({ owner: userId });
+
+    const videos = await Video.aggregate([
+        {
+            $match: { owner: new mongoose.Types.ObjectId(userId) },
+        },
+        {
+            $lookup: {
+                from: "likes",
+                localField: "_id",
+                foreignField: "video",
+                as: "likes",
+            },
+        },
+        {
+            $lookup: {
+                from: "comments",
+                localField: "_id",
+                foreignField: "video",
+                as: "comments",
+            },
+        },
+        {
+            $addFields: {
+                likesCount: { $size: { $ifNull: ["$likes", []] } },
+                commentsCount: { $size: { $ifNull: ["$comments", []] } },
+            },
+        },
+        {
+            $project: {
+                _id: 1,
+                title: 1,
+                description: 1,
+                tags: 1,
+                thumbnail: 1,
+                views: 1,
+                duration: 1,
+                isPublished: 1,
+                createdAt: 1,
+                likesCount: 1,
+                commentsCount: 1,
+            },
+        },
+        {
+            $sort: { createdAt: 1 },
+        },
+        // Apply pagination
+        {
+            $skip: (page - 1) * Math.max(parseInt(limit), 1),
+        },
+        {
+            $limit: Math.max(parseInt(limit), 1),
+        },
+    ]);
 
     if (!videos || videos.length === 0) {
         throw new ApiError(404, "No videos found for this channel");
     }
 
     res.status(200).json(
-        new ApiResponse(200, videos, "Channel videos fetched successfully")
+        new ApiResponse(
+            200,
+            {
+                videos,
+                currentPage: pageNumber,
+                totalPages: Math.ceil(totalVideos / limitNumber),
+                totalVideos,
+            },
+            "Channel videos fetched successfully"
+        )
     );
 });
 
