@@ -39,10 +39,77 @@ const getUserPlaylists = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Invalid user ID");
     }
 
-    const playlists = await Playlist.find({ owner: userId });
+    const playlists = await Playlist.aggregate([
+        {
+            $match: {
+                owner: new mongoose.Types.ObjectId(userId),
+            },
+        },
+        {
+            $lookup: {
+                from: "videos",
+                let: { videoIds: "$videos" },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $and: [
+                                    { $in: ["$_id", "$$videoIds"] },
+                                    { $eq: ["$isPublished", true] }, // assuming videos have this field
+                                ],
+                            },
+                        },
+                    },
+                    {
+                        $addFields: {
+                            sortIndex: {
+                                $indexOfArray: ["$$videoIds", "$_id"],
+                            },
+                        },
+                    },
+                    {
+                        $sort: { sortIndex: 1 },
+                    },
+                    {
+                        $project: {
+                            _id: 1,
+                            thumbnail: 1,
+                            views: 1,
+                        },
+                    },
+                ],
+                as: "videos",
+            },
+        },
+        {
+            $addFields: {
+                totalVideos: { $size: "$videos" },
+                totalViews: { $sum: "$videos.views" },
+                thumbnail: { $arrayElemAt: ["$videos.thumbnail", 0] },
+                videoIds: "$videos._id",
+            },
+        },
+        {
+            $project: {
+                _id: 1,
+                name: 1,
+                description: 1,
+                createdAt: 1,
+                totalVideos: 1,
+                totalViews: 1,
+                videoIds: 1,
+                thumbnail: 1,
+            },
+        },
+        {
+            $sort: {
+                createdAt: -1,
+            },
+        },
+    ]);
 
     if (!playlists || playlists.length === 0) {
-        throw new ApiError(404, "Playlist not found");
+        throw new ApiError(404, "No playlists found for this user");
     }
 
     return res
@@ -51,7 +118,7 @@ const getUserPlaylists = asyncHandler(async (req, res) => {
             new ApiResponse(
                 200,
                 playlists,
-                "User's playlist fetched successfully"
+                "User's playlists fetched successfully"
             )
         );
 });
